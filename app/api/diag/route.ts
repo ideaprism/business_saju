@@ -15,6 +15,13 @@ export async function GET(req: Request) {
     hasBlobToken: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
     // 값이 아니라 키 이름만 노출 — 어떤 저장소 변수가 주입됐는지 확인용
     envKeys: Object.keys(process.env).sort(),
+    // 어느 프로젝트가 이 도메인을 서비스하는지 (비밀 아님)
+    projectName: process.env.VERCEL_PROJECT_NAME ?? null,
+    projectId: process.env.VERCEL_PROJECT_ID ?? null,
+    productionUrl: process.env.VERCEL_PROJECT_PRODUCTION_URL ?? null,
+    targetEnv: process.env.VERCEL_TARGET_ENV ?? null,
+    blobStoreId: process.env.BLOB_STORE_ID ?? null,
+    commitSha: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
     hasPostgres: Boolean(process.env.POSTGRES_URL || process.env.DATABASE_URL),
     region: process.env.VERCEL_REGION ?? null,
     deploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,

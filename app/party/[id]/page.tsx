@@ -65,7 +65,12 @@ export default async function PartyPage({
       />
 
       {/* AI 리포트 */}
-      <ReportSection partyId={party.id} initialReport={report} memberCount={sheets.length} />
+      <ReportSection
+        partyId={party.id}
+        initialReport={report}
+        memberCount={sheets.length}
+        aiEnabled={Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN)}
+      />
 
       {/* 공유 카드 */}
       {analysis && <ShareCard slug={party.shareSlug} />}

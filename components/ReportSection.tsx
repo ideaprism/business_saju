@@ -6,10 +6,12 @@ export default function ReportSection({
   partyId,
   initialReport,
   memberCount,
+  aiEnabled,
 }: {
   partyId: string;
   initialReport: { text: string; createdAt: string } | null;
   memberCount: number;
+  aiEnabled: boolean;
 }) {
   const [report, setReport] = useState(initialReport);
   const [loading, setLoading] = useState(false);
@@ -42,6 +44,10 @@ export default function ReportSection({
             {new Date(report.createdAt).toLocaleString("ko-KR")} 생성 · 멤버 구성이 바뀌면 다시 생성할 수 있어요.
           </p>
         </>
+      ) : !aiEnabled ? (
+        <p className="muted">
+          🔒 파티 전체를 읽고 AI가 써주는 종합 전략 리포트 — <b>곧 열릴 예정</b>이에요.
+        </p>
       ) : (
         <>
           <p className="muted" style={{ marginBottom: 14 }}>

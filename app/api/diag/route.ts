@@ -13,10 +13,8 @@ export async function GET(req: Request) {
   const out: Record<string, unknown> = {
     storageMode,
     hasBlobToken: Boolean(process.env.BLOB_READ_WRITE_TOKEN),
-    // 값이 아니라 키 이름만 노출 — 어떤 스토어 변수가 주입됐는지 확인용
-    tokenLikeEnvKeys: Object.keys(process.env).filter(
-      (k) => k.includes("BLOB") || k.endsWith("_READ_WRITE_TOKEN") || k.includes("POSTGRES") || k.includes("KV_")
-    ),
+    // 값이 아니라 키 이름만 노출 — 어떤 저장소 변수가 주입됐는지 확인용
+    envKeys: Object.keys(process.env).sort(),
     hasPostgres: Boolean(process.env.POSTGRES_URL || process.env.DATABASE_URL),
     region: process.env.VERCEL_REGION ?? null,
     deploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,

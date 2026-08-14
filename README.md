@@ -23,7 +23,11 @@ npm run dev
 | 변수 | 용도 |
 |---|---|
 | `ANTHROPIC_API_KEY` | AI 도감 리포트 활성화 (없으면 잠금 안내 표시) |
-| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | 파티 데이터 영구 저장 (Upstash/Vercel KV). 없으면 파일(/tmp) 폴백 |
+| `BLOB_READ_WRITE_TOKEN` | 파티 데이터 영구 저장 — Vercel Blob (스토어 연결 시 자동 주입) |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | 파티 데이터 영구 저장 — Redis (Upstash/Vercel KV) |
+| `POSTGRES_URL` | 파티 데이터 영구 저장 — Postgres (Supabase 연동, 테이블 자동 생성) |
+
+저장 우선순위: Redis → Blob → Postgres → 로컬 파일(/tmp) 폴백.
 
 ## 고지
 

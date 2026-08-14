@@ -1,13 +1,18 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { Pool } from "pg";
+import { put, get, del } from "@vercel/blob";
 import type { CalendarType, Member, Party, PartyReport } from "./types";
 
 export const MAX_MEMBERS = 8;
 
 // ─────────────────────────────────────────────────────────────
-// 저장 백엔드: Upstash/Vercel KV(Redis REST) 환경변수가 있으면 Redis,
-// 없으면 로컬 JSON 파일 (Vercel 서버리스에서는 /tmp — 인스턴스 한정 임시 저장).
+// 저장 백엔드 우선순위:
+//   1) Redis (Upstash/Vercel KV REST 환경변수)
+//   2) Vercel Blob (BLOB_READ_WRITE_TOKEN)
+//   3) Postgres (Supabase 연동 — POSTGRES_URL)
+//   4) 로컬 JSON 파일 (Vercel 서버리스에서는 /tmp — 인스턴스 한정 임시 저장)
 // ─────────────────────────────────────────────────────────────
 
 interface Backend {
@@ -63,7 +68,129 @@ const redisBackend: Backend = {
   },
 };
 
-// ── 파일 백엔드 (로컬 개발 / Redis 미설정 시 임시) ───────────
+// ── Vercel Blob 백엔드 (BLOB_READ_WRITE_TOKEN) ──────────────
+// 단일 키 덮어쓰기 + get({ useCache: false })로 항상 최신 버전 읽기.
+// invite/slug → partyId 매핑은 생성 후 불변이라 캐시 이슈가 없다.
+
+const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+
+async function blobWrite(pathname: string, content: string): Promise<void> {
+  await put(pathname, content, {
+    access: "private",
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: "application/json",
+  });
+}
+
+async function blobRead(pathname: string): Promise<string | null> {
+  const result = await get(pathname, { access: "private", useCache: false });
+  if (!result || result.statusCode !== 200) return null;
+  return new Response(result.stream).text();
+}
+
+const blobBackend: Backend = {
+  async getParty(id) {
+    const raw = await blobRead(`party/${id}.json`);
+    return raw ? (JSON.parse(raw) as Party) : null;
+  },
+  async saveParty(party) {
+    await Promise.all([
+      blobWrite(`party/${party.id}.json`, JSON.stringify(party)),
+      blobWrite(`invite/${party.inviteToken}.json`, JSON.stringify({ partyId: party.id })),
+      blobWrite(`slug/${party.shareSlug}.json`, JSON.stringify({ partyId: party.id })),
+    ]);
+  },
+  async deleteParty(party) {
+    await del([
+      `party/${party.id}.json`,
+      `invite/${party.inviteToken}.json`,
+      `slug/${party.shareSlug}.json`,
+    ]);
+  },
+  async findByInviteToken(token) {
+    const raw = await blobRead(`invite/${token}.json`);
+    if (!raw) return null;
+    return this.getParty((JSON.parse(raw) as { partyId: string }).partyId);
+  },
+  async findByShareSlug(slug) {
+    const raw = await blobRead(`slug/${slug}.json`);
+    if (!raw) return null;
+    return this.getParty((JSON.parse(raw) as { partyId: string }).partyId);
+  },
+};
+
+// ── Postgres 백엔드 (Supabase 연동 — POSTGRES_URL) ──────────
+
+const PG_URL = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+
+let pool: Pool | null = null;
+let tableReady: Promise<void> | null = null;
+
+function pg(): Pool {
+  if (!pool) {
+    pool = new Pool({
+      connectionString: PG_URL,
+      ssl: { rejectUnauthorized: false },
+      max: 3,
+    });
+  }
+  return pool;
+}
+
+function ensureTable(): Promise<void> {
+  if (!tableReady) {
+    tableReady = pg()
+      .query(
+        `CREATE TABLE IF NOT EXISTS party_up_parties (
+           id TEXT PRIMARY KEY,
+           invite_token TEXT UNIQUE NOT NULL,
+           share_slug TEXT UNIQUE NOT NULL,
+           data JSONB NOT NULL,
+           updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+         )`
+      )
+      .then(() => undefined);
+  }
+  return tableReady;
+}
+
+async function pgFindOne(where: string, value: string): Promise<Party | null> {
+  await ensureTable();
+  const res = await pg().query(
+    `SELECT data FROM party_up_parties WHERE ${where} = $1 LIMIT 1`,
+    [value]
+  );
+  return res.rows.length ? (res.rows[0].data as Party) : null;
+}
+
+const pgBackend: Backend = {
+  async getParty(id) {
+    return pgFindOne("id", id);
+  },
+  async saveParty(party) {
+    await ensureTable();
+    await pg().query(
+      `INSERT INTO party_up_parties (id, invite_token, share_slug, data, updated_at)
+       VALUES ($1, $2, $3, $4, now())
+       ON CONFLICT (id) DO UPDATE
+         SET invite_token = $2, share_slug = $3, data = $4, updated_at = now()`,
+      [party.id, party.inviteToken, party.shareSlug, JSON.stringify(party)]
+    );
+  },
+  async deleteParty(party) {
+    await ensureTable();
+    await pg().query(`DELETE FROM party_up_parties WHERE id = $1`, [party.id]);
+  },
+  async findByInviteToken(token) {
+    return pgFindOne("invite_token", token);
+  },
+  async findByShareSlug(slug) {
+    return pgFindOne("share_slug", slug);
+  },
+};
+
+// ── 파일 백엔드 (로컬 개발 / 외부 저장소 미설정 시 임시) ─────
 
 const DATA_DIR = process.env.VERCEL
   ? path.join("/tmp", "party-up-data")
@@ -105,10 +232,23 @@ const fileBackend: Backend = {
   },
 };
 
-const backend: Backend = REDIS_URL && REDIS_TOKEN ? redisBackend : fileBackend;
+const backend: Backend =
+  REDIS_URL && REDIS_TOKEN
+    ? redisBackend
+    : BLOB_TOKEN
+      ? blobBackend
+      : PG_URL
+        ? pgBackend
+        : fileBackend;
 
-export const storageMode: "redis" | "file" =
-  REDIS_URL && REDIS_TOKEN ? "redis" : "file";
+export const storageMode: "redis" | "blob" | "postgres" | "file" =
+  REDIS_URL && REDIS_TOKEN
+    ? "redis"
+    : BLOB_TOKEN
+      ? "blob"
+      : PG_URL
+        ? "postgres"
+        : "file";
 
 // ─────────────────────────────────────────────────────────────
 // 도메인 API

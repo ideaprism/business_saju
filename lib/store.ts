@@ -72,10 +72,29 @@ const redisBackend: Backend = {
 // 단일 키 덮어쓰기 + get({ useCache: false })로 항상 최신 버전 읽기.
 // invite/slug → partyId 매핑은 생성 후 불변이라 캐시 이슈가 없다.
 
-const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
+/**
+ * Blob 토큰 이름은 스토어 연결 방식에 따라 달라진다. 기본은
+ * BLOB_READ_WRITE_TOKEN이지만, 한 프로젝트에 스토어가 여러 개면
+ * <스토어명>_READ_WRITE_TOKEN 형태로 주입되므로 이름을 훑어서 찾는다.
+ */
+function findBlobToken(): string | undefined {
+  if (process.env.BLOB_READ_WRITE_TOKEN) return process.env.BLOB_READ_WRITE_TOKEN;
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.endsWith("_READ_WRITE_TOKEN") && value?.startsWith("vercel_blob_")) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+const BLOB_TOKEN = findBlobToken();
 
 async function blobRead(pathname: string): Promise<string | null> {
-  const result = await get(pathname, { access: "private", useCache: false });
+  const result = await get(pathname, {
+    access: "private",
+    useCache: false,
+    token: BLOB_TOKEN,
+  });
   if (!result || result.statusCode !== 200) return null;
   return new Response(result.stream).text();
 }
@@ -91,6 +110,7 @@ async function blobWrite(pathname: string, content: string): Promise<void> {
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType: "application/json",
+    token: BLOB_TOKEN,
   });
 
   for (let i = 0; i < 10; i++) {
@@ -112,11 +132,14 @@ const blobBackend: Backend = {
     ]);
   },
   async deleteParty(party) {
-    await del([
-      `party/${party.id}.json`,
-      `invite/${party.inviteToken}.json`,
-      `slug/${party.shareSlug}.json`,
-    ]);
+    await del(
+      [
+        `party/${party.id}.json`,
+        `invite/${party.inviteToken}.json`,
+        `slug/${party.shareSlug}.json`,
+      ],
+      { token: BLOB_TOKEN }
+    );
   },
   async findByInviteToken(token) {
     const raw = await blobRead(`invite/${token}.json`);
@@ -259,6 +282,12 @@ export const storageMode: "redis" | "blob" | "postgres" | "file" =
       : PG_URL
         ? "postgres"
         : "file";
+
+/**
+ * 서버리스에서 파일 백엔드는 인스턴스마다 /tmp가 달라 파티가 사라진다.
+ * 조용히 유실되면 원인을 알 수 없으므로, 이 경우 쓰기를 막고 알린다.
+ */
+export const storageDurable = !(process.env.VERCEL && storageMode === "file");
 
 // ─────────────────────────────────────────────────────────────
 // 도메인 API

@@ -74,6 +74,17 @@ const redisBackend: Backend = {
 
 const BLOB_TOKEN = process.env.BLOB_READ_WRITE_TOKEN;
 
+async function blobRead(pathname: string): Promise<string | null> {
+  const result = await get(pathname, { access: "private", useCache: false });
+  if (!result || result.statusCode !== 200) return null;
+  return new Response(result.stream).text();
+}
+
+/**
+ * Blob은 쓰기 직후 같은 경로를 읽어도 잠시 이전 내용(또는 없음)이 보이는
+ * 전파 지연이 있다. 파티 생성 직후 대시보드로 이동하는 흐름에서 이 지연은
+ * "파티를 찾을 수 없어요"로 나타나므로, 쓴 내용이 실제로 읽힐 때까지 확인한다.
+ */
 async function blobWrite(pathname: string, content: string): Promise<void> {
   await put(pathname, content, {
     access: "private",
@@ -81,12 +92,11 @@ async function blobWrite(pathname: string, content: string): Promise<void> {
     allowOverwrite: true,
     contentType: "application/json",
   });
-}
 
-async function blobRead(pathname: string): Promise<string | null> {
-  const result = await get(pathname, { access: "private", useCache: false });
-  if (!result || result.statusCode !== 200) return null;
-  return new Response(result.stream).text();
+  for (let i = 0; i < 10; i++) {
+    if ((await blobRead(pathname)) === content) return;
+    await new Promise((r) => setTimeout(r, 150 + i * 30));
+  }
 }
 
 const blobBackend: Backend = {

@@ -1,5 +1,6 @@
 import CreatePartyForm from "@/components/CreatePartyForm";
 import Disclaimer from "@/components/Disclaimer";
+import MyParties from "@/components/MyParties";
 
 export default function Home() {
   return (
@@ -16,6 +17,8 @@ export default function Home() {
         </p>
         <p className="small">출생 시간은 안 물어봐요. MBTI를 넣으면 전투 스타일 보정이 붙습니다.</p>
       </div>
+
+      <MyParties />
 
       <div className="panel">
         <h2>파티 결성</h2>

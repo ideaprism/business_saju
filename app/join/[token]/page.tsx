@@ -1,3 +1,4 @@
+import Link from "next/link";
 import JoinForm from "@/components/JoinForm";
 import Disclaimer from "@/components/Disclaimer";
 import { getPartyByInviteToken, MAX_MEMBERS } from "@/lib/store";
@@ -48,6 +49,21 @@ export default async function JoinPage({
         ) : (
           <JoinForm token={token} />
         )}
+      </div>
+
+      {/* 파티 주소를 잃어버린 사람도 이 초대 링크로 결과를 다시 볼 수 있게 */}
+      <div className="panel" style={{ textAlign: "center" }}>
+        <h2 style={{ justifyContent: "center" }}>이미 합류하셨나요?</h2>
+        <p className="muted" style={{ marginBottom: 16 }}>
+          다시 입력할 필요 없어요. 이 초대 링크로 언제든 파티 결과를 볼 수 있습니다.
+        </p>
+        <Link
+          href={`/party/${party.id}`}
+          className="btn btn-ghost"
+          style={{ textDecoration: "none", display: "inline-block" }}
+        >
+          🏕️ 원정대 결과 보기
+        </Link>
       </div>
 
       <Disclaimer />

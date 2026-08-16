@@ -1,5 +1,6 @@
 import CopyInvite from "@/components/CopyInvite";
 import Disclaimer from "@/components/Disclaimer";
+import PartyBookmark from "@/components/PartyBookmark";
 import PartyDashboard from "@/components/PartyDashboard";
 import ReportSection from "@/components/ReportSection";
 import ShareCard from "@/components/ShareCard";
@@ -45,6 +46,8 @@ export default async function PartyPage({
           </p>
         )}
       </div>
+
+      <PartyBookmark partyId={party.id} partyName={party.name} />
 
       {/* 초대 */}
       {sheets.length < MAX_MEMBERS && (
